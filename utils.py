@@ -135,7 +135,7 @@ def generate_word_wfst(word):
     
     return f
 
-def create_wfst():
+def create_wfst(lex):
     """
     Creates an overarching WFST for the decoding task.
     This example creates a simple word loop allowing any word sequence.
@@ -160,7 +160,7 @@ def create_wfst():
         # Tie the end of the word back to the loop state
         # Output the actual word label at the end of the word path
         out_label = word_table.find(word)
-        f.add_arc(current_state, fst.Arc(0, out_label, fst.Weight('log', 0.0), loop_state))
+        f.add_arc(current_state, fst.Arc(0, out_label, fst.Weight('log', 1.0), loop_state))
         
     f.set_input_symbols(state_table)
     f.set_output_symbols(word_table)
