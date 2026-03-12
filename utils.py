@@ -1,3 +1,9 @@
+import observation_model
+import math
+import openfst_python as fst
+
+
+
 def parse_lexicon(lex_file):
     """
     Parse the lexicon file and return it in dictionary form.
