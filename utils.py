@@ -134,34 +134,3 @@ def generate_word_wfst(word):
     f.set_final(current_state)
     
     return f
-
-def create_wfst(lex):
-    """
-    Creates an overarching WFST for the decoding task.
-    This example creates a simple word loop allowing any word sequence.
-    """
-    f = fst.Fst('log')
-    start_state = f.add_state()
-    f.set_start(start_state)
-    
-    # Loop back state allows transitioning between words
-    loop_state = f.add_state()
-    f.add_arc(start_state, fst.Arc(0, 0, fst.Weight('log', 0.0), loop_state))
-    f.set_final(loop_state)
-    
-    # Connect every word in the lexicon to the loop
-    for word in lex.keys():
-        current_state = loop_state
-        
-        # Add phones for the word
-        for phone in lex[word]:
-            current_state = generate_phone_wfst(f, current_state, phone, 3)
-            
-        # Tie the end of the word back to the loop state
-        # Output the actual word label at the end of the word path
-        out_label = word_table.find(word)
-        f.add_arc(current_state, fst.Arc(0, out_label, fst.Weight('log', 1.0), loop_state))
-        
-    f.set_input_symbols(state_table)
-    f.set_output_symbols(word_table)
-    return f
