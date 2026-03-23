@@ -6,9 +6,10 @@ class MyViterbiDecoder:
     
     NLL_ZERO = 1e10
     
-    def __init__(self, f, audio_file_name):
+    def __init__(self, f, audio_file_name, beam=float('inf')):
         self.om = observation_model.ObservationModel()
         self.f = f
+        self.beam = beam
         
         if audio_file_name:
             self.om.load_audio(audio_file_name)
@@ -63,7 +64,12 @@ class MyViterbiDecoder:
     
     def forward_step(self, t):
           
+        best_prev = min(self.V[t-1])
+        
         for i in self.f.states():
+
+            if self.V[t-1][i] > best_prev + self.beam:
+                continue
             
             if not self.V[t-1][i] == self.NLL_ZERO:
                 
