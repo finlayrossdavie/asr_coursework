@@ -6,11 +6,11 @@ class MyViterbiDecoder:
     
     NLL_ZERO = 1e10
     
-    def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None):
+    def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None):  # ADDED max_states
         self.om = observation_model.ObservationModel()
         self.f = f
         self.beam = beam
-        self.max_states = max_states
+        self.max_states = max_states  # ADDED
         
         if audio_file_name:
             self.om.load_audio(audio_file_name)
@@ -24,7 +24,7 @@ class MyViterbiDecoder:
         self.V = []
         self.B = []
         self.W = []
-        self.forward_computation_count = 0  # ADDED
+        self.forward_computation_count = 0
         
         for t in range(self.om.observation_length()+1):
             self.V.append([self.NLL_ZERO]*self.f.num_states())
@@ -55,7 +55,7 @@ class MyViterbiDecoder:
                         self.B[t][j] = self.B[t][i] 
                         
                         if arc.olabel != 0:
-                            self.W[t][j] = [arc.olabel]  # FIXED (was self.W[t][i] + [arc.olabel])
+                            self.W[t][j] = [arc.olabel]
                         else:
                             self.W[t][j] = self.W[t][i]
                         
@@ -64,7 +64,7 @@ class MyViterbiDecoder:
 
     
     def forward_step(self, t):
-          
+
         best_prev = min(self.V[t-1])  # ADDED: for beam pruning
 
         # ADDED: histogram pruning — find top max_states active states
@@ -85,6 +85,25 @@ class MyViterbiDecoder:
             # ADDED: histogram pruning
             if allowed is not None and i not in allowed:
                 continue
+            
+            if not self.V[t-1][i] == self.NLL_ZERO:
+                
+                for arc in self.f.arcs(i):
+                    
+                    if arc.ilabel != 0:
+                        self.forward_computation_count += 1
+                        j = arc.nextstate
+                        tp = float(arc.weight)
+                        ep = -self.om.log_observation_probability(self.f.input_symbols().find(arc.ilabel), t)
+                        prob = tp + ep + self.V[t-1][i]
+                        if prob < self.V[t][j]:
+                            self.V[t][j] = prob
+                            self.B[t][j] = i
+                            
+                            if arc.olabel != 0:
+                                self.W[t][j] = [arc.olabel]
+                            else:
+                                self.W[t][j] = []
                             
     
     def finalise_decoding(self):
@@ -122,7 +141,7 @@ class MyViterbiDecoder:
             i = self.B[t][j]
             best_state_sequence.append(i)
 
-            if self.W[t][j]:  # FIXED - only collect when non-empty
+            if self.W[t][j]:
                 best_out_sequence = self.W[t][j] + best_out_sequence
 
             j = i  
@@ -130,7 +149,6 @@ class MyViterbiDecoder:
 
         best_state_sequence.reverse()
         
-        # Returns a list of word strings  # FIXED - was a joined string
         word_sequence = [
             self.f.output_symbols().find(label)
             for label in best_out_sequence
