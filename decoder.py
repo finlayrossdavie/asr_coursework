@@ -6,10 +6,11 @@ class MyViterbiDecoder:
     
     NLL_ZERO = 1e10
     
-    def __init__(self, f, audio_file_name, beam=float('inf')):
+    def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None):
         self.om = observation_model.ObservationModel()
         self.f = f
         self.beam = beam
+        self.max_states = max_states
         
         if audio_file_name:
             self.om.load_audio(audio_file_name)
@@ -64,31 +65,26 @@ class MyViterbiDecoder:
     
     def forward_step(self, t):
           
-        best_prev = min(self.V[t-1])
-        
+        best_prev = min(self.V[t-1])  # ADDED: for beam pruning
+
+        # ADDED: histogram pruning — find top max_states active states
+        if self.max_states is not None:
+            active_states = [(i, self.V[t-1][i]) for i in self.f.states()
+                             if self.V[t-1][i] < self.NLL_ZERO]
+            active_states.sort(key=lambda x: x[1])
+            allowed = set(s[0] for s in active_states[:self.max_states])
+        else:
+            allowed = None  # no histogram pruning
+          
         for i in self.f.states():
 
+            # ADDED: beam pruning
             if self.V[t-1][i] > best_prev + self.beam:
                 continue
-            
-            if not self.V[t-1][i] == self.NLL_ZERO:
-                
-                for arc in self.f.arcs(i):
-                    
-                    if arc.ilabel != 0:
-                        self.forward_computation_count += 1  # ADDED
-                        j = arc.nextstate
-                        tp = float(arc.weight)
-                        ep = -self.om.log_observation_probability(self.f.input_symbols().find(arc.ilabel), t)
-                        prob = tp + ep + self.V[t-1][i]
-                        if prob < self.V[t][j]:
-                            self.V[t][j] = prob
-                            self.B[t][j] = i
-                            
-                            if arc.olabel != 0:
-                                self.W[t][j] = [arc.olabel]
-                            else:
-                                self.W[t][j] = []
+
+            # ADDED: histogram pruning
+            if allowed is not None and i not in allowed:
+                continue
                             
     
     def finalise_decoding(self):
