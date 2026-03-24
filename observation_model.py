@@ -197,9 +197,9 @@ class ObservationModel:
         return int(j) if j is not None else -1
 
     def log_observation_probability(self, hmm_label, t):
+        """Safe for any hmm_label (e.g. lexicon #0_1); never raises KeyError."""
         if t <= 0 or t > self.timesteps+1:
             raise IndexError("Timestep not in range [1,{}]".format(self.timesteps+1))
-        # Normalise: SymbolTable may give non-str; missing ids -> '' from decoder helper.
         hmm_label = '' if hmm_label is None else str(hmm_label)
 
         try:
@@ -212,7 +212,7 @@ class ObservationModel:
                 return np.log(1.0 / n_pdf)
             v = self.post_mat[t - 1, int(pdf_idx)]
             return np.log(float(v))
-        except (KeyError, IndexError, TypeError):
+        except Exception:
             try:
                 n_pdf = self.post_mat.shape[1]
             except Exception:
