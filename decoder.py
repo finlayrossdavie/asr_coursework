@@ -33,38 +33,8 @@ class MyViterbiDecoder:
         self._build_graph_cache()
         self.initialise_decoding()
 
-    def _state_dim(self):
-        """Length of V[t] per state id. Scan 0..num_states()-1 (some bindings omit ids in states())."""
-        hi = -1
-        ns = int(self.f.num_states())
-        for s in range(ns):
-            try:
-                for arc in self.f.arcs(s):
-                    hi = max(hi, s, int(arc.nextstate))
-            except Exception:
-                continue
-        for s in self.f.states():
-            try:
-                s = int(s)
-                hi = max(hi, s)
-                for arc in self.f.arcs(s):
-                    hi = max(hi, int(arc.nextstate))
-            except Exception:
-                continue
-        try:
-            hi = max(hi, int(self.f.start()))
-        except Exception:
-            pass
-        n = max(hi + 1, ns, 1)
-        try:
-            st = int(self.f.start())
-            if st >= n:
-                n = st + 1
-        except Exception:
-            pass
-        return n
-
     def _build_graph_cache(self):
+        """Cache epsilon/emit arcs; set self._n_slots to fit every source id and arc destination."""
         self._state_list = list(self.f.states())
         try:
             st = int(self.f.start())
@@ -72,25 +42,56 @@ class MyViterbiDecoder:
                 self._state_list.append(st)
         except Exception:
             pass
-        n = self._state_dim()
-        self._eps_arcs = [[] for _ in range(n)]
-        self._emit_arcs = [[] for _ in range(n)]
-        source_states = set(self._state_list)
+
+        ns = int(self.f.num_states())
+        source_states = set(range(ns))
+        source_states.update(self._state_list)
         try:
             source_states.add(int(self.f.start()))
         except Exception:
             pass
+
+        hi = -1
+        for i in source_states:
+            try:
+                hi = max(hi, int(i))
+            except Exception:
+                continue
+        try:
+            hi = max(hi, int(self.f.start()))
+        except Exception:
+            pass
+
+        for i in source_states:
+            try:
+                ii = int(i)
+                for arc in self.f.arcs(ii):
+                    hi = max(hi, ii, int(arc.nextstate))
+            except Exception:
+                continue
+
+        n = max(hi + 1, ns, 1)
+        self._n_slots = n
+
+        self._eps_arcs = [[] for _ in range(n)]
+        self._emit_arcs = [[] for _ in range(n)]
         for i in sorted(source_states):
             if i < 0 or i >= n:
                 continue
-            for arc in self.f.arcs(i):
-                tp = float(arc.weight)
-                j = arc.nextstate
-                if arc.ilabel == 0:
-                    self._eps_arcs[i].append(arc)
-                else:
-                    pdf_idx = self._ilabel_to_pdf.get(arc.ilabel, -1)
-                    self._emit_arcs[i].append((j, tp, arc.ilabel, pdf_idx, arc.olabel))
+            ii = int(i)
+            try:
+                for arc in self.f.arcs(ii):
+                    tp = float(arc.weight)
+                    j = int(arc.nextstate)
+                    if arc.ilabel == 0:
+                        self._eps_arcs[ii].append(arc)
+                    else:
+                        pdf_idx = self._ilabel_to_pdf.get(arc.ilabel, -1)
+                        self._emit_arcs[ii].append(
+                            (j, tp, arc.ilabel, pdf_idx, arc.olabel)
+                        )
+            except Exception:
+                continue
 
     def initialise_decoding(self):
         self.V = []
@@ -98,14 +99,15 @@ class MyViterbiDecoder:
         self.W = []
         self.forward_computation_count = 0
 
-        n = self._state_dim()
+        n = self._n_slots
         for t in range(self.om.observation_length() + 1):
             self.V.append([self.NLL_ZERO] * n)
             self.B.append([-1] * n)
             self.W.append([[] for _ in range(n)])
 
-        self.V[0][self.f.start()] = 0.0
-        self.traverse_epsilon_active(0, [self.f.start()])
+        st = int(self.f.start())
+        self.V[0][st] = 0.0
+        self.traverse_epsilon_active(0, [st])
 
     def traverse_epsilon_active(self, t, seed):
         q = deque(seed)
@@ -115,7 +117,7 @@ class MyViterbiDecoder:
             if self.V[t][i] == self.NLL_ZERO:
                 continue
             for arc in self._eps_arcs[i]:
-                j = arc.nextstate
+                j = int(arc.nextstate)
                 nw = self.V[t][i] + float(arc.weight)
                 if nw < self.V[t][j]:
                     self.V[t][j] = nw
@@ -172,7 +174,10 @@ class MyViterbiDecoder:
         return updated
 
     def finalise_decoding(self):
+        n = len(self.V[-1]) if self.V else 0
         for state in self.f.states():
+            if state < 0 or state >= n:
+                continue
             final_weight = float(self.f.final(state))
             if self.V[-1][state] != self.NLL_ZERO:
                 if final_weight == math.inf:
