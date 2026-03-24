@@ -1,111 +1,132 @@
-import observation_model
 import math
+from collections import deque
+
+import observation_model
 import openfst_python as fst
 
+
 class MyViterbiDecoder:
-    
+
     NLL_ZERO = 1e10
-    
-    def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None):  # ADDED max_states
-        self.om = observation_model.ObservationModel()
+
+    def __init__(self, f, audio_file_name, beam=float("inf"), max_states=None, om=None):
+        self.om = om if om is not None else observation_model.ObservationModel()
         self.f = f
         self.beam = beam
-        self.max_states = max_states  # ADDED
-        
+        self.max_states = max_states
+
         if audio_file_name:
             self.om.load_audio(audio_file_name)
         else:
             self.om.load_dummy_audio()
-        
+
+        self._ilabel_to_pdf = {}
+        isym = self.f.input_symbols()
+        for hmm_label, pdf_idx in self.om.state_map.items():
+            try:
+                il = isym.find(hmm_label)
+            except Exception:
+                continue
+            if il is not None and il != -1:
+                self._ilabel_to_pdf[il] = pdf_idx
+
+        self._build_graph_cache()
         self.initialise_decoding()
 
-        
+    def _build_graph_cache(self):
+        self._state_list = list(self.f.states())
+        n = self.f.num_states()
+        self._eps_arcs = [[] for _ in range(n)]
+        self._emit_arcs = [[] for _ in range(n)]
+        for i in self._state_list:
+            for arc in self.f.arcs(i):
+                tp = float(arc.weight)
+                j = arc.nextstate
+                if arc.ilabel == 0:
+                    self._eps_arcs[i].append(arc)
+                else:
+                    pdf_idx = self._ilabel_to_pdf.get(arc.ilabel, -1)
+                    self._emit_arcs[i].append((j, tp, arc.ilabel, pdf_idx, arc.olabel))
+
     def initialise_decoding(self):
         self.V = []
         self.B = []
         self.W = []
         self.forward_computation_count = 0
-        
-        for t in range(self.om.observation_length()+1):
-            self.V.append([self.NLL_ZERO]*self.f.num_states())
-            self.B.append([-1]*self.f.num_states())
-            self.W.append([[] for i in range(self.f.num_states())])
-        
+
+        n = self.f.num_states()
+        for t in range(self.om.observation_length() + 1):
+            self.V.append([self.NLL_ZERO] * n)
+            self.B.append([-1] * n)
+            self.W.append([[] for _ in range(n)])
+
         self.V[0][self.f.start()] = 0.0
-        self.traverse_epsilon_arcs(0)        
-        
-    def traverse_epsilon_arcs(self, t):
-        states_to_traverse = list(self.f.states())
-        while states_to_traverse:
-            
-            i = states_to_traverse.pop(0)   
-        
+        self.traverse_epsilon_active(0, [self.f.start()])
+
+    def traverse_epsilon_active(self, t, seed):
+        q = deque(seed)
+        seen = set(seed)
+        while q:
+            i = q.popleft()
             if self.V[t][i] == self.NLL_ZERO:
-                    continue
-        
-            for arc in self.f.arcs(i):
-                
-                if arc.ilabel == 0:
-                  
-                    j = arc.nextstate
-                
-                    if self.V[t][j] > self.V[t][i] + float(arc.weight):
-                        
-                        self.V[t][j] = self.V[t][i] + float(arc.weight)
-                        self.B[t][j] = self.B[t][i] 
-                        
-                        if arc.olabel != 0:
-                            self.W[t][j] = [arc.olabel]
-                        else:
-                            self.W[t][j] = self.W[t][i]
-                        
-                        if j not in states_to_traverse:
-                            states_to_traverse.append(j)
-
-    
-    def forward_step(self, t):
-
-        best_prev = min(self.V[t-1])  # ADDED: for beam pruning
-
-        # ADDED: histogram pruning — find top max_states active states
-        if self.max_states is not None:
-            active_states = [(i, self.V[t-1][i]) for i in self.f.states()
-                             if self.V[t-1][i] < self.NLL_ZERO]
-            active_states.sort(key=lambda x: x[1])
-            allowed = set(s[0] for s in active_states[:self.max_states])
-        else:
-            allowed = None  # no histogram pruning
-          
-        for i in self.f.states():
-
-            # ADDED: beam pruning
-            if self.V[t-1][i] > best_prev + self.beam:
                 continue
+            for arc in self._eps_arcs[i]:
+                j = arc.nextstate
+                nw = self.V[t][i] + float(arc.weight)
+                if nw < self.V[t][j]:
+                    self.V[t][j] = nw
+                    self.B[t][j] = self.B[t][i]
+                    if arc.olabel != 0:
+                        self.W[t][j] = [arc.olabel]
+                    else:
+                        self.W[t][j] = self.W[t][i]
+                    if j not in seen:
+                        seen.add(j)
+                        q.append(j)
 
-            # ADDED: histogram pruning
+    def forward_step(self, t):
+        prev_active = [i for i in self._state_list if self.V[t - 1][i] < self.NLL_ZERO]
+        if not prev_active:
+            return []
+
+        best_prev = min(self.V[t - 1][i] for i in prev_active)
+
+        if self.max_states is not None:
+            active_states = sorted(
+                [(i, self.V[t - 1][i]) for i in prev_active], key=lambda x: x[1]
+            )
+            allowed = set(s[0] for s in active_states[: self.max_states])
+        else:
+            allowed = None
+
+        updated = []
+        for i in prev_active:
+            if self.V[t - 1][i] > best_prev + self.beam:
+                continue
             if allowed is not None and i not in allowed:
                 continue
-            
-            if not self.V[t-1][i] == self.NLL_ZERO:
-                
-                for arc in self.f.arcs(i):
-                    
-                    if arc.ilabel != 0:
-                        self.forward_computation_count += 1
-                        j = arc.nextstate
-                        tp = float(arc.weight)
-                        ep = -self.om.log_observation_probability(self.f.input_symbols().find(arc.ilabel), t)
-                        prob = tp + ep + self.V[t-1][i]
-                        if prob < self.V[t][j]:
-                            self.V[t][j] = prob
-                            self.B[t][j] = i
-                            
-                            if arc.olabel != 0:
-                                self.W[t][j] = [arc.olabel]
-                            else:
-                                self.W[t][j] = []
-                            
-    
+
+            for j, tp, _il, pdf_idx, olabel in self._emit_arcs[i]:
+                self.forward_computation_count += 1
+                if (
+                    pdf_idx < 0
+                    or self.om.emission_nll is None
+                    or pdf_idx >= self.om.emission_nll.shape[1]
+                ):
+                    ep = self.NLL_ZERO
+                else:
+                    ep = self.om.emission_nll[t - 1, pdf_idx]
+                prob = tp + ep + self.V[t - 1][i]
+                if prob < self.V[t][j]:
+                    self.V[t][j] = prob
+                    self.B[t][j] = i
+                    if olabel != 0:
+                        self.W[t][j] = [olabel]
+                    else:
+                        self.W[t][j] = []
+                    updated.append(j)
+        return updated
+
     def finalise_decoding(self):
         for state in self.f.states():
             final_weight = float(self.f.final(state))
@@ -114,29 +135,28 @@ class MyViterbiDecoder:
                     self.V[-1][state] = self.NLL_ZERO
                 else:
                     self.V[-1][state] += final_weight
-                    
+
         finished = [x for x in self.V[-1] if x < self.NLL_ZERO]
         if not finished:
             print("No path got to the end of the observations.")
-        
-        
+
     def decode(self):
         self.initialise_decoding()
         t = 1
         while t <= self.om.observation_length():
-            self.forward_step(t)
-            self.traverse_epsilon_arcs(t)
+            updated = self.forward_step(t)
+            self.traverse_epsilon_active(t, updated)
             t += 1
         self.finalise_decoding()
-    
+
     def backtrace(self):
         best_final_state = self.V[-1].index(min(self.V[-1]))
         best_state_sequence = [best_final_state]
         best_out_sequence = []
-        
+
         t = self.om.observation_length()
         j = best_final_state
-        
+
         while t >= 0:
             i = self.B[t][j]
             best_state_sequence.append(i)
@@ -144,15 +164,15 @@ class MyViterbiDecoder:
             if self.W[t][j]:
                 best_out_sequence = self.W[t][j] + best_out_sequence
 
-            j = i  
+            j = i
             t -= 1
 
         best_state_sequence.reverse()
-        
+
         word_sequence = [
             self.f.output_symbols().find(label)
             for label in best_out_sequence
             if label != 0
         ]
-        
+
         return (best_state_sequence, word_sequence)

@@ -56,6 +56,8 @@ class ObservationModel:
         self.bindir = "/group/teaching/asr/labs/bin/"
         self.nnet = nnet
         self.state_map = self.load_state_map("{}/conf/pdfsmap".format(self.nnetdir))
+        self.emission_nll = None
+        self.n_pdf = None
         if not kaldi_dir:
             path = ['/group/teaching/asr/labs/bin/lib/',
                     '/opt/intel/compilers_and_libraries_2019.5.281/linux/mkl/lib/intel64_lin/']
@@ -97,6 +99,7 @@ class ObservationModel:
         self.post_mat = self.parse_kaldi_post_mat(self.nnet.before)
         self.timesteps = len(self.post_mat)
         loaded_first_rec = True
+        self.precompute_emission_nll()
 
     def parse_kaldi_post_mat(self, mat_str):
         mat_str = mat_str.split('\r\n')
@@ -139,6 +142,24 @@ class ObservationModel:
             for ph in f.readlines():
                 for i in range(1, 4):
                     self.hmm_labels.append("{}_{}".format(ph.strip(),i))
+        self.precompute_emission_nll()
+
+    def precompute_emission_nll(self):
+        """Per-frame negative log-likelihoods for fast Viterbi (column index = pdf id)."""
+        T = self.timesteps
+        if not self.dummy:
+            self.emission_nll = -np.log(np.maximum(self.post_mat, 1e-300))
+            self.n_pdf = int(self.emission_nll.shape[1])
+            return
+        self.n_pdf = max(self.state_map.values()) + 1 if self.state_map else 1
+        self.emission_nll = np.zeros((T, self.n_pdf), dtype=np.float64)
+        one_per_pdf = {}
+        for hmm_label, pdf_idx in self.state_map.items():
+            if pdf_idx not in one_per_pdf:
+                one_per_pdf[pdf_idx] = hmm_label
+        for t in range(1, T + 1):
+            for pdf_idx, hmm_label in one_per_pdf.items():
+                self.emission_nll[t - 1, pdf_idx] = -self.dummy_observation_probability(hmm_label, t)
 
     def observation_length(self):
         return self.timesteps
@@ -187,6 +208,9 @@ class ObservationModel:
         for label in self.hmm_labels:
             if label not in p:
                 p[label] = 0.001  # give all other states a small probability to avoid zero probability
+        for label in self.state_map:
+            if label not in p:
+                p[label] = 0.001
 
         # normalise the probabilities:
         scale = sum(p.values())
