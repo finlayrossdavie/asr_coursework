@@ -37,38 +37,32 @@ jupyter notebook
 
 ---------------------------------------------------------------------------
 KeyError                                  Traceback (most recent call last)
-/tmp/ipykernel_169645/1133844114.py in <module>
-    456     num_states = graph.num_states()
-    457     num_arcs = sum(1 for s in graph.states() for _ in graph.arcs(s))
---> 458     result = run_decode(graph, wav_files, beam=beam, max_states=max_st)
-    459     print_results(label, result, num_states, num_arcs)
+/tmp/ipykernel_169645/2249093817.py in <module>
+    470     num_states = graph.num_states()
+    471     num_arcs = sum(1 for s in graph.states() for _ in graph.arcs(s))
+--> 472     result = run_decode(graph, wav_files, beam=beam, max_states=max_st)
+    473     print_results(label, result, num_states, num_arcs)
 
-/tmp/ipykernel_169645/1133844114.py in run_decode(f, wav_files, beam, max_states)
-    363 
-    364         t0 = time.perf_counter()
---> 365         decoder.decode()
-    366         decode_time = time.perf_counter() - t0
-    367 
+/tmp/ipykernel_169645/2249093817.py in run_decode(f, wav_files, beam, max_states)
+    375 
+    376         t0 = time.perf_counter()
+--> 377         decoder.decode()
+    378         decode_time = time.perf_counter() - t0
+    379 
 
 ~/ASR/asr_assignment/decoder.py in decode(self)
-    125             allowed = None  # no histogram pruning
-    126 
---> 127         for i in self._state_ids:
-    128 
-    129             # ADDED: beam pruning
+    125                              if self.V[t-1][i] < self.NLL_ZERO]
+    126             active_states.sort(key=lambda x: x[1])
+--> 127             allowed = set(s[0] for s in active_states[:self.max_states])
+    128         else:
+    129             allowed = None  # no histogram pruning
 
 ~/ASR/asr_assignment/decoder.py in forward_step(self, t)
-     95 
-     96                 if arc.ilabel == 0:
----> 97 
-     98                     j = arc.nextstate
-     99 
-
-~/ASR/asr_assignment/observation_model.py in log_observation_probability(self, hmm_label, t)
-    150         """
-    151         Precompute per-frame negative log-likelihoods for fast Viterbi (array indexing).
+     95             if self.V[t][i] == self.NLL_ZERO:
+     96                     continue
+...
 --> 152         Real audio: emission_nll[t-1, pdf_idx] = -log(post_mat[t-1, pdf_idx]).
     153         OOV HMM labels (e.g. #0_1): use oov_nll = log(n_pdf) per plan.
-    154         Dummy: emission_nll[t-1, col] for a fixed label set (state_map + phonelist + #0_1).
+    154         Dummy: emission_nll[t-1, col] for phonelist HMM ids plus #0_1 only. Do NOT union
 
 KeyError: '#0_1'
