@@ -151,7 +151,8 @@ class ObservationModel:
         Precompute per-frame negative log-likelihoods for fast Viterbi (array indexing).
         Real audio: emission_nll[t-1, pdf_idx] = -log(post_mat[t-1, pdf_idx]).
         OOV HMM labels (e.g. #0_1): use oov_nll = log(n_pdf) per plan.
-        Dummy: emission_nll[t-1, col] for a fixed label set (state_map + phonelist + #0_1).
+        Dummy: emission_nll[t-1, col] for phonelist HMM ids plus #0_1 only. Do NOT union
+        state_map.keys() — pdfsmap can list thousands of states and makes precompute O(T * N) huge.
         """
         T = self.timesteps
         if not self.dummy:
@@ -161,29 +162,39 @@ class ObservationModel:
             self.oov_nll = float(math.log(self.n_pdf))
             self._dummy_label_to_col = None
             return
-        labels = sorted(set(self.state_map.keys()) | set(self.hmm_labels) | {'#0_1'})
+        labels = sorted(set(self.hmm_labels) | {'#0_1'})
         nlab = len(labels)
         self._dummy_label_to_col = {lab: j for j, lab in enumerate(labels)}
+        self.oov_nll = float(math.log(max(nlab, 1)))
         self.emission_nll = np.zeros((T, nlab), dtype=np.float64)
         for ti in range(T):
             t = ti + 1
             for lab in labels:
-                j = self._dummy_label_to_col[lab]
-                lp = self.dummy_observation_probability(lab, t)
-                self.emission_nll[ti, j] = -float(lp)
+                j = self._dummy_label_to_col.get(lab)
+                if j is None:
+                    continue
+                try:
+                    lp = self.dummy_observation_probability(lab, t)
+                    self.emission_nll[ti, j] = -float(lp)
+                except Exception:
+                    self.emission_nll[ti, j] = float(self.oov_nll)
         self.n_pdf = nlab
-        self.oov_nll = float(math.log(max(nlab, 1)))
 
     def pdf_idx_for_hmm_label(self, hmm_label):
         """Column index into emission_nll for this HMM string, or -1 if OOV (use oov_nll)."""
         hmm_label = '' if hmm_label is None else str(hmm_label)
         if not self.dummy:
             pdf_idx = self.state_map.get(hmm_label)
-            return pdf_idx if pdf_idx is not None else -1
+            if pdf_idx is None:
+                return -1
+            try:
+                return int(pdf_idx)
+            except (TypeError, ValueError):
+                return -1
         if self._dummy_label_to_col is None:
             return -1
         j = self._dummy_label_to_col.get(hmm_label)
-        return j if j is not None else -1
+        return int(j) if j is not None else -1
 
     def log_observation_probability(self, hmm_label, t):
         if t <= 0 or t > self.timesteps+1:
@@ -191,20 +202,22 @@ class ObservationModel:
         # Normalise: SymbolTable may give non-str; missing ids -> '' from decoder helper.
         hmm_label = '' if hmm_label is None else str(hmm_label)
 
-        if self.dummy:
-            return self.dummy_observation_probability(hmm_label, t)
-
         try:
+            if self.dummy:
+                return self.dummy_observation_probability(hmm_label, t)
+
             pdf_idx = self.state_map.get(hmm_label)
             if pdf_idx is None:
-                # Not in pdfsmap (e.g. #0_1) or unknown label: uniform over NN posteriors.
                 n_pdf = self.post_mat.shape[1]
                 return np.log(1.0 / n_pdf)
-            v = self.post_mat[t - 1, pdf_idx]
+            v = self.post_mat[t - 1, int(pdf_idx)]
             return np.log(float(v))
         except (KeyError, IndexError, TypeError):
-            n_pdf = self.post_mat.shape[1]
-            return np.log(1.0 / n_pdf)
+            try:
+                n_pdf = self.post_mat.shape[1]
+            except Exception:
+                n_pdf = 1
+            return np.log(1.0 / max(n_pdf, 1))
 
     def dummy_observation_probability(self, hmm_label, t):
         """ Computes b_j(t) where j is the current state

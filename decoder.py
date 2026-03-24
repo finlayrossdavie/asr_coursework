@@ -28,8 +28,12 @@ class MyViterbiDecoder:
             return ''
         return str(s)
     
-    def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None):  # ADDED max_states
-        self.om = observation_model.ObservationModel()
+    def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None, om=None):
+        """
+        om: optional shared ObservationModel (reuse across utterances in run_decode to avoid
+        repeated ObservationModel() construction; load_audio is still called per file).
+        """
+        self.om = om if om is not None else observation_model.ObservationModel()
         self.f = f
         self.beam = beam
         self.max_states = max_states  # ADDED
@@ -138,12 +142,18 @@ class MyViterbiDecoder:
                 ti = t - 1
                 enll = self.om.emission_nll
                 oov = self.om.oov_nll
+                ncols = int(enll.shape[1]) if hasattr(enll, 'shape') else 0
                 for (j, tp, pdf_idx, olabel) in self._emitting_arcs[i]:
                     self.forward_computation_count += 1
-                    if pdf_idx is None or pdf_idx < 0:
+                    # Must not pass -1 to numpy: enll[t, -1] is the *last* column, not OOV.
+                    try:
+                        pidx = int(pdf_idx)
+                    except (TypeError, ValueError):
+                        pidx = -1
+                    if pidx < 0 or pidx >= ncols:
                         ep = oov
                     else:
-                        ep = float(enll[ti, pdf_idx])
+                        ep = float(enll[ti, pidx])
                     prob = tp + ep + self.V[t-1][i]
                     if prob < self.V[t][j]:
                         self.V[t][j] = prob
@@ -198,10 +208,19 @@ class MyViterbiDecoder:
 
         best_state_sequence.reverse()
         
-        word_sequence = [
-            self.f.output_symbols().find(label)
-            for label in best_out_sequence
-            if label != 0
-        ]
+        out_sym = self.f.output_symbols()
+        word_sequence = []
+        for label in best_out_sequence:
+            if label == 0:
+                continue
+            try:
+                if out_sym is not None:
+                    w = out_sym.find(label)
+                else:
+                    w = ''
+            except (KeyError, TypeError, ValueError):
+                w = ''
+            if w:
+                word_sequence.append(w)
         
         return (best_state_sequence, word_sequence)
