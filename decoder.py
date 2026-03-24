@@ -34,29 +34,55 @@ class MyViterbiDecoder:
         self.initialise_decoding()
 
     def _state_dim(self):
-        """Length of V[t] per state id. Must cover every arc nextstate, not only states()."""
+        """Length of V[t] per state id. Scan 0..num_states()-1 (some bindings omit ids in states())."""
         hi = -1
+        ns = int(self.f.num_states())
+        for s in range(ns):
+            try:
+                for arc in self.f.arcs(s):
+                    hi = max(hi, s, int(arc.nextstate))
+            except Exception:
+                continue
         for s in self.f.states():
-            if s > hi:
-                hi = s
-            for arc in self.f.arcs(s):
-                j = arc.nextstate
-                if j > hi:
-                    hi = j
+            try:
+                s = int(s)
+                hi = max(hi, s)
+                for arc in self.f.arcs(s):
+                    hi = max(hi, int(arc.nextstate))
+            except Exception:
+                continue
         try:
-            st = self.f.start()
-            if st > hi:
-                hi = st
+            hi = max(hi, int(self.f.start()))
         except Exception:
             pass
-        return max(hi + 1, int(self.f.num_states()), 1)
+        n = max(hi + 1, ns, 1)
+        try:
+            st = int(self.f.start())
+            if st >= n:
+                n = st + 1
+        except Exception:
+            pass
+        return n
 
     def _build_graph_cache(self):
         self._state_list = list(self.f.states())
+        try:
+            st = int(self.f.start())
+            if st not in self._state_list:
+                self._state_list.append(st)
+        except Exception:
+            pass
         n = self._state_dim()
         self._eps_arcs = [[] for _ in range(n)]
         self._emit_arcs = [[] for _ in range(n)]
-        for i in self._state_list:
+        source_states = set(self._state_list)
+        try:
+            source_states.add(int(self.f.start()))
+        except Exception:
+            pass
+        for i in sorted(source_states):
+            if i < 0 or i >= n:
+                continue
             for arc in self.f.arcs(i):
                 tp = float(arc.weight)
                 j = arc.nextstate
