@@ -56,8 +56,32 @@ class MyViterbiDecoder:
             self.W.append([[] for i in range(self.f.num_states())])
         
         self.V[0][self.f.start()] = 0.0
-        self.traverse_epsilon_arcs(0)        
-        
+
+        # Fast path: map each input arc label id -> pdf column (-1 = OOV, use om.oov_nll).
+        self._ilabel_to_pdf = {}
+        seen_ilabels = set()
+        for i in self._state_ids:
+            for arc in self.f.arcs(i):
+                if arc.ilabel != 0:
+                    seen_ilabels.add(arc.ilabel)
+        for il in seen_ilabels:
+            hmm = self._input_ilabel_to_hmm_string(self.f, il)
+            self._ilabel_to_pdf[il] = self.om.pdf_idx_for_hmm_label(hmm)
+
+        # Emitting arcs only (ilabel != 0); epsilon arcs still use traverse_epsilon_arcs.
+        nstates = self.f.num_states()
+        self._emitting_arcs = [[] for _ in range(nstates)]
+        for i in self._state_ids:
+            for arc in self.f.arcs(i):
+                if arc.ilabel == 0:
+                    continue
+                j = arc.nextstate
+                tp = float(arc.weight)
+                pdf_idx = self._ilabel_to_pdf.get(arc.ilabel, -1)
+                self._emitting_arcs[i].append((j, tp, pdf_idx, arc.olabel))
+
+        self.traverse_epsilon_arcs(0)
+
     def traverse_epsilon_arcs(self, t):
         states_to_traverse = list(self._state_ids)
         while states_to_traverse:
@@ -111,25 +135,25 @@ class MyViterbiDecoder:
                 continue
             
             if not self.V[t-1][i] == self.NLL_ZERO:
-                
-                for arc in self.f.arcs(i):
-                    
-                    if arc.ilabel != 0:
-                        self.forward_computation_count += 1
-                        j = arc.nextstate
-                        tp = float(arc.weight)
-                        hmm_label = self._input_ilabel_to_hmm_string(self.f, arc.ilabel)
-                        ep = -self.om.log_observation_probability(hmm_label, t)
-                        prob = tp + ep + self.V[t-1][i]
-                        if prob < self.V[t][j]:
-                            self.V[t][j] = prob
-                            self.B[t][j] = i
-                            
-                            if arc.olabel != 0:
-                                self.W[t][j] = [arc.olabel]
-                            else:
-                                self.W[t][j] = []
-                            
+                ti = t - 1
+                enll = self.om.emission_nll
+                oov = self.om.oov_nll
+                for (j, tp, pdf_idx, olabel) in self._emitting_arcs[i]:
+                    self.forward_computation_count += 1
+                    if pdf_idx is None or pdf_idx < 0:
+                        ep = oov
+                    else:
+                        ep = float(enll[ti, pdf_idx])
+                    prob = tp + ep + self.V[t-1][i]
+                    if prob < self.V[t][j]:
+                        self.V[t][j] = prob
+                        self.B[t][j] = i
+
+                        if olabel != 0:
+                            self.W[t][j] = [olabel]
+                        else:
+                            self.W[t][j] = []
+
     
     def finalise_decoding(self):
         for state in self._state_ids:

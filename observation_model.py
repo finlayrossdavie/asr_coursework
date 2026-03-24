@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import math
 import numpy as np
 import pexpect
 from pexpect import TIMEOUT, EOF
@@ -97,6 +98,7 @@ class ObservationModel:
         self.post_mat = self.parse_kaldi_post_mat(self.nnet.before)
         self.timesteps = len(self.post_mat)
         loaded_first_rec = True
+        self.precompute_emission_nll()
 
     def parse_kaldi_post_mat(self, mat_str):
         mat_str = mat_str.split('\r\n')
@@ -139,9 +141,49 @@ class ObservationModel:
             for ph in f.readlines():
                 for i in range(1, 4):
                     self.hmm_labels.append("{}_{}".format(ph.strip(),i))
+        self.precompute_emission_nll()
 
     def observation_length(self):
         return self.timesteps
+
+    def precompute_emission_nll(self):
+        """
+        Precompute per-frame negative log-likelihoods for fast Viterbi (array indexing).
+        Real audio: emission_nll[t-1, pdf_idx] = -log(post_mat[t-1, pdf_idx]).
+        OOV HMM labels (e.g. #0_1): use oov_nll = log(n_pdf) per plan.
+        Dummy: emission_nll[t-1, col] for a fixed label set (state_map + phonelist + #0_1).
+        """
+        T = self.timesteps
+        if not self.dummy:
+            pm = np.asarray(self.post_mat, dtype=np.float64)
+            self.emission_nll = -np.log(np.maximum(pm, 1e-300))
+            self.n_pdf = pm.shape[1]
+            self.oov_nll = float(math.log(self.n_pdf))
+            self._dummy_label_to_col = None
+            return
+        labels = sorted(set(self.state_map.keys()) | set(self.hmm_labels) | {'#0_1'})
+        nlab = len(labels)
+        self._dummy_label_to_col = {lab: j for j, lab in enumerate(labels)}
+        self.emission_nll = np.zeros((T, nlab), dtype=np.float64)
+        for ti in range(T):
+            t = ti + 1
+            for lab in labels:
+                j = self._dummy_label_to_col[lab]
+                lp = self.dummy_observation_probability(lab, t)
+                self.emission_nll[ti, j] = -float(lp)
+        self.n_pdf = nlab
+        self.oov_nll = float(math.log(max(nlab, 1)))
+
+    def pdf_idx_for_hmm_label(self, hmm_label):
+        """Column index into emission_nll for this HMM string, or -1 if OOV (use oov_nll)."""
+        hmm_label = '' if hmm_label is None else str(hmm_label)
+        if not self.dummy:
+            pdf_idx = self.state_map.get(hmm_label)
+            return pdf_idx if pdf_idx is not None else -1
+        if self._dummy_label_to_col is None:
+            return -1
+        j = self._dummy_label_to_col.get(hmm_label)
+        return j if j is not None else -1
 
     def log_observation_probability(self, hmm_label, t):
         if t <= 0 or t > self.timesteps+1:
