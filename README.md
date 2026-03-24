@@ -41,14 +41,13 @@ jupyter notebook
   Total deletions            : 279
   Total insertions           : 132
   Total forward computations : 10683986
-  Total decode time          : 358.9085s
-  Total backtrace time       : 0.0619s
-  Total time                 : 358.9704s
+  Total decode time          : 358.5529s
+  Total backtrace time       : 0.0659s
+  Total time                 : 358.6188s
   WFST states                : 121
   WFST arcs                  : 351
 
 WARNING: Push: pushing type is set to 0, so not pushing
-
 ---------------------------------------------------------------------------
 IndexError                                Traceback (most recent call last)
 /tmp/ipykernel_169645/926206671.py in <module>
@@ -74,7 +73,7 @@ IndexError                                Traceback (most recent call last)
 
 ~/ASR/asr_assignment/decoder.py in initialise_decoding(self)
      32 
-     33         self._build_graph_cache()
+...
 ---> 34         self.initialise_decoding()
      35 
      36     def _state_dim(self):
