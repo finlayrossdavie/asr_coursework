@@ -93,6 +93,27 @@ class MyViterbiDecoder:
             except Exception:
                 continue
 
+        self._ensure_n_slots_cover_cache_and_start()
+
+    def _ensure_n_slots_cover_cache_and_start(self):
+        """Extend DP / arc slot arrays so start and every cached nextstate index fits."""
+        need = self._n_slots
+        try:
+            need = max(need, int(self.f.start()) + 1)
+        except Exception:
+            pass
+        for row in self._eps_arcs:
+            for arc in row:
+                need = max(need, int(arc.nextstate) + 1)
+        for row in self._emit_arcs:
+            for tup in row:
+                need = max(need, int(tup[0]) + 1)
+        if need > self._n_slots:
+            extra = need - self._n_slots
+            self._eps_arcs.extend([[] for _ in range(extra)])
+            self._emit_arcs.extend([[] for _ in range(extra)])
+            self._n_slots = need
+
     def initialise_decoding(self):
         self.V = []
         self.B = []
@@ -100,24 +121,58 @@ class MyViterbiDecoder:
         self.forward_computation_count = 0
 
         n = self._n_slots
-        for t in range(self.om.observation_length() + 1):
+        try:
+            need_start = int(self.f.start()) + 1
+            if need_start > n:
+                self._pad_n_slots(need_start)
+                n = self._n_slots
+        except Exception:
+            pass
+
+        T = self.om.observation_length()
+        if T < 0:
+            T = 0
+        for t in range(T + 1):
             self.V.append([self.NLL_ZERO] * n)
             self.B.append([-1] * n)
             self.W.append([[] for _ in range(n)])
 
+        if not self.V:
+            return
+
+        st = int(self.f.start())
+        if st >= len(self.V[0]):
+            self._pad_n_slots(st + 1)
+            n = self._n_slots
+            self.V = [[self.NLL_ZERO] * n for _ in self.V]
+            self.B = [[-1] * n for _ in self.B]
+            self.W = [[[] for _ in range(n)] for _ in self.W]
+
         st = int(self.f.start())
         self.V[0][st] = 0.0
         self.traverse_epsilon_active(0, [st])
+
+    def _pad_n_slots(self, need):
+        if need <= self._n_slots:
+            return
+        extra = need - self._n_slots
+        self._eps_arcs.extend([[] for _ in range(extra)])
+        self._emit_arcs.extend([[] for _ in range(extra)])
+        self._n_slots = need
 
     def traverse_epsilon_active(self, t, seed):
         q = deque(seed)
         seen = set(seed)
         while q:
             i = q.popleft()
+            if i < 0 or i >= len(self._eps_arcs) or i >= len(self.V[t]):
+                continue
             if self.V[t][i] == self.NLL_ZERO:
                 continue
             for arc in self._eps_arcs[i]:
                 j = int(arc.nextstate)
+                if j < 0 or j >= len(self.V[t]):
+                    continue
                 nw = self.V[t][i] + float(arc.weight)
                 if nw < self.V[t][j]:
                     self.V[t][j] = nw
@@ -131,7 +186,11 @@ class MyViterbiDecoder:
                         q.append(j)
 
     def forward_step(self, t):
-        prev_active = [i for i in self._state_list if self.V[t - 1][i] < self.NLL_ZERO]
+        prev_active = [
+            i
+            for i in self._state_list
+            if 0 <= i < len(self.V[t - 1]) and self.V[t - 1][i] < self.NLL_ZERO
+        ]
         if not prev_active:
             return []
 
@@ -152,6 +211,8 @@ class MyViterbiDecoder:
             if allowed is not None and i not in allowed:
                 continue
 
+            if i < 0 or i >= len(self._emit_arcs):
+                continue
             for j, tp, _il, pdf_idx, olabel in self._emit_arcs[i]:
                 self.forward_computation_count += 1
                 if (
@@ -162,6 +223,8 @@ class MyViterbiDecoder:
                     ep = self.NLL_ZERO
                 else:
                     ep = self.om.emission_nll[t - 1, pdf_idx]
+                if j < 0 or j >= len(self.V[t]):
+                    continue
                 prob = tp + ep + self.V[t - 1][i]
                 if prob < self.V[t][j]:
                     self.V[t][j] = prob
@@ -192,7 +255,8 @@ class MyViterbiDecoder:
     def decode(self):
         self.initialise_decoding()
         t = 1
-        while t <= self.om.observation_length():
+        T = max(0, self.om.observation_length())
+        while t <= T:
             updated = self.forward_step(t)
             self.traverse_epsilon_active(t, updated)
             t += 1
