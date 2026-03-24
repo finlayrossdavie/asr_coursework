@@ -146,17 +146,23 @@ class ObservationModel:
     def log_observation_probability(self, hmm_label, t):
         if t <= 0 or t > self.timesteps+1:
             raise IndexError("Timestep not in range [1,{}]".format(self.timesteps+1))
+        # Normalise: SymbolTable may give non-str; missing ids -> '' from decoder helper.
+        hmm_label = '' if hmm_label is None else str(hmm_label)
+
         if self.dummy:
             return self.dummy_observation_probability(hmm_label, t)
-        else:
+
+        try:
             pdf_idx = self.state_map.get(hmm_label)
             if pdf_idx is None:
-                # Lexicon disambiguation pseudo-states (e.g. #0_1) are not in pdfsmap.
-                # Use a neutral log-prob so the decoder does not crash; LM/transition
-                # weights still control these arcs.
+                # Not in pdfsmap (e.g. #0_1) or unknown label: uniform over NN posteriors.
                 n_pdf = self.post_mat.shape[1]
                 return np.log(1.0 / n_pdf)
-            return np.log(self.post_mat[t-1, pdf_idx])
+            v = self.post_mat[t - 1, pdf_idx]
+            return np.log(float(v))
+        except (KeyError, IndexError, TypeError):
+            n_pdf = self.post_mat.shape[1]
+            return np.log(1.0 / n_pdf)
 
     def dummy_observation_probability(self, hmm_label, t):
         """ Computes b_j(t) where j is the current state
@@ -173,6 +179,7 @@ class ObservationModel:
               p (float): the observation probability p(x_t | q_t = hmm_label)
         """
 
+        hmm_label = '' if hmm_label is None else str(hmm_label)
         p = {}  # dictionary of probabilities
 
         assert(t > 0)
@@ -204,4 +211,8 @@ class ObservationModel:
         for k in p:
             p[k] = p[k]/scale
 
-        return np.log(p[hmm_label])
+        # Never KeyError: label may be OOV (e.g. #0_1) vs phonelist-based dummy.
+        val = p.get(hmm_label)
+        if val is None or val <= 0:
+            val = 1.0 / max(len(p), 1)
+        return np.log(val)

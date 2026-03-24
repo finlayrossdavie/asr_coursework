@@ -5,6 +5,28 @@ import openfst_python as fst
 class MyViterbiDecoder:
     
     NLL_ZERO = 1e10
+
+    @staticmethod
+    def _input_ilabel_to_hmm_string(fst_obj, ilabel):
+        """
+        Map arc input label id -> HMM state string for the observation model.
+        openfst-python SymbolTable.find(int) can raise KeyError if the id is missing
+        from the table (e.g. stale graph vs table); never let that crash the decoder.
+        """
+        if ilabel == 0:
+            return ''
+        st = fst_obj.input_symbols()
+        if st is None:
+            return ''
+        try:
+            s = st.find(ilabel)
+        except (KeyError, TypeError, ValueError):
+            return ''
+        if s is None:
+            return ''
+        if isinstance(s, int) and s < 0:
+            return ''
+        return str(s)
     
     def __init__(self, f, audio_file_name, beam=float('inf'), max_states=None):  # ADDED max_states
         self.om = observation_model.ObservationModel()
@@ -94,7 +116,8 @@ class MyViterbiDecoder:
                         self.forward_computation_count += 1
                         j = arc.nextstate
                         tp = float(arc.weight)
-                        ep = -self.om.log_observation_probability(self.f.input_symbols().find(arc.ilabel), t)
+                        hmm_label = self._input_ilabel_to_hmm_string(self.f, arc.ilabel)
+                        ep = -self.om.log_observation_probability(hmm_label, t)
                         prob = tp + ep + self.V[t-1][i]
                         if prob < self.V[t][j]:
                             self.V[t][j] = prob
