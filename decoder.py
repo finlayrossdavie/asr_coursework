@@ -5,6 +5,18 @@ import observation_model
 import openfst_python as fst
 
 
+def count_fst_arcs(fst_obj):
+    """Count arcs without using states() iterator (some bindings yield a trailing -1 sentinel)."""
+    n = 0
+    ns = int(fst_obj.num_states())
+    for s in range(ns):
+        try:
+            n += sum(1 for _ in fst_obj.arcs(s))
+        except Exception:
+            continue
+    return n
+
+
 class MyViterbiDecoder:
 
     NLL_ZERO = 1e10
@@ -35,10 +47,18 @@ class MyViterbiDecoder:
 
     def _build_graph_cache(self):
         """Cache epsilon/emit arcs; set self._n_slots to fit every source id and arc destination."""
-        self._state_list = list(self.f.states())
+        # states() may yield a trailing -1 sentinel on some openfst_python builds
+        self._state_list = []
+        for s in self.f.states():
+            try:
+                si = int(s)
+            except Exception:
+                continue
+            if si >= 0:
+                self._state_list.append(si)
         try:
             st = int(self.f.start())
-            if st not in self._state_list:
+            if st >= 0 and st not in self._state_list:
                 self._state_list.append(st)
         except Exception:
             pass
@@ -237,11 +257,15 @@ class MyViterbiDecoder:
         return updated
 
     def finalise_decoding(self):
-        n = len(self.V[-1]) if self.V else 0
-        for state in self.f.states():
-            if state < 0 or state >= n:
+        if not self.V:
+            return
+        n = len(self.V[-1])
+        # Avoid f.states(): openfst_python may include a -1 sentinel -> "State ID -1 not valid"
+        for state in range(n):
+            try:
+                final_weight = float(self.f.final(state))
+            except Exception:
                 continue
-            final_weight = float(self.f.final(state))
             if self.V[-1][state] != self.NLL_ZERO:
                 if final_weight == math.inf:
                     self.V[-1][state] = self.NLL_ZERO
@@ -263,15 +287,26 @@ class MyViterbiDecoder:
         self.finalise_decoding()
 
     def backtrace(self):
-        best_final_state = self.V[-1].index(min(self.V[-1]))
+        n = len(self.V[-1]) if self.V else 0
+        finite = [
+            (s, self.V[-1][s])
+            for s in range(n)
+            if self.V[-1][s] < self.NLL_ZERO
+        ]
+        if not finite:
+            return ([], [])
+
+        best_final_state = min(finite, key=lambda x: x[1])[0]
         best_state_sequence = [best_final_state]
         best_out_sequence = []
 
-        t = self.om.observation_length()
+        t = min(self.om.observation_length(), len(self.V) - 1)
         j = best_final_state
 
         while t >= 0:
             i = self.B[t][j]
+            if i < 0:
+                break
             best_state_sequence.append(i)
 
             if self.W[t][j]:
