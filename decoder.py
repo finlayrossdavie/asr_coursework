@@ -34,17 +34,22 @@ class MyViterbiDecoder:
         self.initialise_decoding()
 
     def _state_dim(self):
-        """Length of V[t] per state id. OpenFST state ids need not be 0..num_states()-1."""
-        ids = list(self.f.states())
-        hi = max(ids) if ids else -1
+        """Length of V[t] per state id. Must cover every arc nextstate, not only states()."""
+        hi = -1
+        for s in self.f.states():
+            if s > hi:
+                hi = s
+            for arc in self.f.arcs(s):
+                j = arc.nextstate
+                if j > hi:
+                    hi = j
         try:
             st = self.f.start()
             if st > hi:
                 hi = st
         except Exception:
             pass
-        # num_states() is a count; when ids are sparse, max(id)+1 is the safe width
-        return max(hi + 1, self.f.num_states(), 1)
+        return max(hi + 1, int(self.f.num_states()), 1)
 
     def _build_graph_cache(self):
         self._state_list = list(self.f.states())
