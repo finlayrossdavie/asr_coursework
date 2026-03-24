@@ -34,16 +34,15 @@ conda activate asr_env
 cd asr_assignment
 jupyter notebook 
 ```
----------------------------------------------------------------------------
 === Monolithic interpolated WFST (lambda=0.0) ===
   WER                        : 48.05%
   Total substitutions        : 389
   Total deletions            : 279
   Total insertions           : 132
   Total forward computations : 10683986
-  Total decode time          : 358.5529s
-  Total backtrace time       : 0.0659s
-  Total time                 : 358.6188s
+  Total decode time          : 355.0502s
+  Total backtrace time       : 0.0631s
+  Total time                 : 355.1133s
   WFST states                : 121
   WFST arcs                  : 351
 
@@ -76,6 +75,6 @@ IndexError                                Traceback (most recent call last)
 ...
 ---> 34         self.initialise_decoding()
      35 
-     36     def _state_dim(self):
+     36     def _build_graph_cache(self):
 
 IndexError: list assignment index out of range
