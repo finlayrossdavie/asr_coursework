@@ -35,6 +35,21 @@ cd asr_assignment
 jupyter notebook 
 ```
 ---------------------------------------------------------------------------
+=== Monolithic interpolated WFST (lambda=0.0) ===
+  WER                        : 48.05%
+  Total substitutions        : 389
+  Total deletions            : 279
+  Total insertions           : 132
+  Total forward computations : 10683986
+  Total decode time          : 358.9085s
+  Total backtrace time       : 0.0619s
+  Total time                 : 358.9704s
+  WFST states                : 121
+  WFST arcs                  : 351
+
+WARNING: Push: pushing type is set to 0, so not pushing
+
+---------------------------------------------------------------------------
 IndexError                                Traceback (most recent call last)
 /tmp/ipykernel_169645/926206671.py in <module>
     240     nh = hlg_wfst.num_states()
