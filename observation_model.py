@@ -149,7 +149,14 @@ class ObservationModel:
         if self.dummy:
             return self.dummy_observation_probability(hmm_label, t)
         else:
-            return np.log(self.post_mat[t-1, self.state_map[hmm_label]])
+            pdf_idx = self.state_map.get(hmm_label)
+            if pdf_idx is None:
+                # Lexicon disambiguation pseudo-states (e.g. #0_1) are not in pdfsmap.
+                # Use a neutral log-prob so the decoder does not crash; LM/transition
+                # weights still control these arcs.
+                n_pdf = self.post_mat.shape[1]
+                return np.log(1.0 / n_pdf)
+            return np.log(self.post_mat[t-1, pdf_idx])
 
     def dummy_observation_probability(self, hmm_label, t):
         """ Computes b_j(t) where j is the current state
@@ -187,6 +194,10 @@ class ObservationModel:
         for label in self.hmm_labels:
             if label not in p:
                 p[label] = 0.001  # give all other states a small probability to avoid zero probability
+
+        # Disambiguation / any HMM label not listed above (e.g. #0_1 from WFST cascade)
+        if hmm_label not in p:
+            p[hmm_label] = 0.001
 
         # normalise the probabilities:
         scale = sum(p.values())
