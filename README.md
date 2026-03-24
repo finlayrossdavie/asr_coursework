@@ -35,46 +35,113 @@ cd asr_assignment
 jupyter notebook 
 ```
 === Monolithic interpolated WFST (lambda=0.0) ===
-  WER                        : 48.05%
-  Total substitutions        : 389
-  Total deletions            : 279
-  Total insertions           : 132
-  Total forward computations : 10683986
-  Total decode time          : 355.0502s
-  Total backtrace time       : 0.0631s
-  Total time                 : 355.1133s
+  WER                        : 47.39%
+  Total substitutions        : 363
+  Total deletions            : 330
+  Total insertions           : 96
+  Total forward computations : 10328790
+  Total decode time          : 65.8134s
+  Total backtrace time       : 0.0647s
+  Total time                 : 65.8780s
   WFST states                : 121
   WFST arcs                  : 351
 
 WARNING: Push: pushing type is set to 0, so not pushing
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the observations.
+ERROR: State ID -1 not valid
+No path got to the end of the 
+
+
 ---------------------------------------------------------------------------
-IndexError                                Traceback (most recent call last)
-/tmp/ipykernel_169645/926206671.py in <module>
+KeyboardInterrupt                         Traceback (most recent call last)
+/tmp/ipykernel_182432/926206671.py in <module>
     240     nh = hlg_wfst.num_states()
     241     ah = sum(1 for s in hlg_wfst.states() for _ in hlg_wfst.arcs(s))
 --> 242     rh = run_decode(hlg_wfst, wav_files, beam=beam_hlg, max_states=max_states_hlg)
     243     print_results(f"Tree lexicon + LM look-ahead HLG (lambda={lam:.1f})", rh, nh, ah)
     244 
 
-/tmp/ipykernel_169645/926206671.py in run_decode(f, wav_files, beam, max_states)
+/tmp/ipykernel_182432/926206671.py in run_decode(f, wav_files, beam, max_states)
     140 
     141     for wav_file in wav_files:
 --> 142         decoder = MyViterbiDecoder(f, wav_file, beam=beam, max_states=max_states)
     143 
     144         t0 = time.perf_counter()
 
-~/ASR/asr_assignment/decoder.py in __init__(self, f, audio_file_name, beam, max_states)
+~/ASR/asr_assignment/decoder.py in __init__(self, f, audio_file_name, beam, max_states, om)
+     17 
      18         if audio_file_name:
-     19             self.om.load_audio(audio_file_name)
----> 20         else:
+---> 19             self.om.load_audio(audio_file_name)
+     20         else:
      21             self.om.load_dummy_audio()
-     22 
 
-~/ASR/asr_assignment/decoder.py in initialise_decoding(self)
-     32 
+~/ASR/asr_assignment/observation_model.py in load_audio(self, wav_fn)
+     94         self.nnet.send("{} {}\n".format(utt_name, wav_fn))
 ...
----> 34         self.initialise_decoding()
-     35 
-     36     def _build_graph_cache(self):
+--> 143             return select.select(iwtd, owtd, ewtd, timeout)
+    144         except InterruptedError:
+    145             err = sys.exc_info()[1]
 
-IndexError: list assignment index out of range
+KeyboardInterrupt: 
