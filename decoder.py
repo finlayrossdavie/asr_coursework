@@ -47,6 +47,8 @@ class MyViterbiDecoder:
         self.B = []
         self.W = []
         self.forward_computation_count = 0
+        # Cache once per utterance: f.states() is called every frame in forward_step / epsilon pass.
+        self._state_ids = list(self.f.states())
         
         for t in range(self.om.observation_length()+1):
             self.V.append([self.NLL_ZERO]*self.f.num_states())
@@ -57,7 +59,7 @@ class MyViterbiDecoder:
         self.traverse_epsilon_arcs(0)        
         
     def traverse_epsilon_arcs(self, t):
-        states_to_traverse = list(self.f.states())
+        states_to_traverse = list(self._state_ids)
         while states_to_traverse:
             
             i = states_to_traverse.pop(0)   
@@ -91,14 +93,14 @@ class MyViterbiDecoder:
 
         # ADDED: histogram pruning — find top max_states active states
         if self.max_states is not None:
-            active_states = [(i, self.V[t-1][i]) for i in self.f.states()
+            active_states = [(i, self.V[t-1][i]) for i in self._state_ids
                              if self.V[t-1][i] < self.NLL_ZERO]
             active_states.sort(key=lambda x: x[1])
             allowed = set(s[0] for s in active_states[:self.max_states])
         else:
             allowed = None  # no histogram pruning
           
-        for i in self.f.states():
+        for i in self._state_ids:
 
             # ADDED: beam pruning
             if self.V[t-1][i] > best_prev + self.beam:
@@ -130,7 +132,7 @@ class MyViterbiDecoder:
                             
     
     def finalise_decoding(self):
-        for state in self.f.states():
+        for state in self._state_ids:
             final_weight = float(self.f.final(state))
             if self.V[-1][state] != self.NLL_ZERO:
                 if final_weight == math.inf:
