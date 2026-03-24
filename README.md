@@ -34,7 +34,6 @@ conda activate asr_env
 cd asr_assignment
 jupyter notebook 
 ```
-
 ---------------------------------------------------------------------------
 IndexError                                Traceback (most recent call last)
 /tmp/ipykernel_169645/926206671.py in <module>
@@ -63,6 +62,6 @@ IndexError                                Traceback (most recent call last)
      33         self._build_graph_cache()
 ---> 34         self.initialise_decoding()
      35 
-     36     def _build_graph_cache(self):
+     36     def _state_dim(self):
 
 IndexError: list assignment index out of range
